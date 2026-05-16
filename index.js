@@ -1,100 +1,66 @@
 import express from "express";
-import http from "http";
-import { WebSocketServer } from "ws";
-import WebSocket from "ws";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-app.get("/", (req, res) => {
-  res.send("OK");
-});
+// ✅ AI dotaz (text)
+async function askAI(message) {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      input: `Jsi recepční v ordinaci. Odpověz česky: ${message}`
+    })
+  });
 
-app.all("/twiml", (req, res) => {
+  const data = await response.json();
+  return data.output[0].content[0].text;
+}
+
+// ✅ první krok
+app.post("/twiml", (req, res) => {
   res.type("text/xml");
 
-  res.send(`<?xml version="1.0" encoding="UTF-8"?>
+  res.send(`
 <Response>
-  <Start>
-    <Stream url="wss://fabulous-fascination-production-185c.up.railway.app/ws"/>
-  </Start>
-  <Say>Přepojuji vás na AI asistenta</Say>
-  <Pause length="60"/>
-</Response>`);
+  <Say>Vítejte, jak vám mohu pomoci?</Say>
+  <Gather input="speech" action="/process" method="POST" language="cs-CZ" />
+</Response>
+  `);
 });
 
-const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+// ✅ zpracování řeči
+app.post("/process", async (req, res) => {
+  const speechText = req.body.SpeechResult;
 
-wss.on("connection", (clientWs) => {
-  console.log("✅ Twilio WS připojeno");
+  console.log("🎤 User said:", speechText);
 
-  let streamSid = null;
+  let aiResponse = "Nerozumím, zkuste to prosím znovu.";
 
-  const openaiWs = new WebSocket(
-    // ✅ jiný model (bez beta restriction)
-    "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview",
-    {
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
-        // ❌ odstraněn OpenAI-Beta header!
-      }
+  if (speechText) {
+    try {
+      aiResponse = await askAI(speechText);
+    } catch (e) {
+      console.log("AI error:", e);
     }
-  );
+  }
 
-  clientWs.on("message", (msg) => {
-    const data = JSON.parse(msg);
+  res.type("text/xml");
 
-    if (data.event === "start") {
-      streamSid = data.start.streamSid;
-      console.log("🎤 Stream started");
-    }
-
-    if (data.event === "media") {
-      openaiWs.send(JSON.stringify({
-        type: "input_audio_buffer.append",
-        audio: data.media.payload
-      }));
-    }
-  });
-
-  openaiWs.on("message", (msg) => {
-    const data = JSON.parse(msg);
-
-    if (data.type === "response.audio.delta" && streamSid) {
-      clientWs.send(JSON.stringify({
-        event: "media",
-        streamSid,
-        media: {
-          payload: data.delta
-        }
-      }));
-    }
-  });
-
-  openaiWs.on("open", () => {
-    console.log("🤖 OpenAI connected");
-
-    openaiWs.send(JSON.stringify({
-      type: "response.create",
-      response: {
-        modalities: ["audio"],
-        instructions: "Dobrý den, jak vám mohu pomoci?"
-      }
-    }));
-  });
-
-  openaiWs.on("close", (code, reason) => {
-    console.log("❌ OpenAI closed:", code, reason?.toString());
-  });
-
-  openaiWs.on("error", (err) => {
-    console.log("❌ OpenAI error:", err.message);
-  });
+  res.send(`
+<Response>
+  <Say>${aiResponse}</Say>
+  <Gather input="speech" action="/process" method="POST" language="cs-CZ" />
+</Response>
+  `);
 });
 
 const PORT = 3000;
 
-server.listen(PORT, () => {
+app.listen(PORT, () => {
   console.log("✅ Server běží na portu " + PORT);
 });
