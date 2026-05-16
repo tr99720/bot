@@ -1,31 +1,27 @@
-import express from "express";
+import WebSocket, { WebSocketServer } from 'ws';
 
-const app = express();
+const wss = new WebSocketServer({ port: process.env.PORT || 3000 });
 
-// důležité pro Twilio ↓↓↓
-app.use(express.urlencoded({ extended: true }));
+console.log("WebSocket server běží");
 
-app.post("/voice", (req, res) => {
-    console.log("CALL RECEIVED"); // uvidíš v logu
+wss.on('connection', function connection(ws) {
+  console.log("Twilio connected");
 
-    res.type("text/xml");
+  ws.on('message', function message(data) {
+    const msg = data.toString();
+    console.log("Received:", msg);
 
-    res.send(`
-<Response>
-    <Say voice="alice" language="cs-CZ">
-        Dobrý den. Tohle je testovací hlasový chatbot.
-    </Say>
-</Response>
-    `);
-});
+    // jednoduchá odpověď (text event)
+    ws.send(JSON.stringify({
+      type: "response.create",
+      response: {
+        modalities: ["text"],
+        instructions: "Dobrý den, jsem hlasový asistent. Jak vám mohu pomoci?"
+      }
+    }));
+  });
 
-// test endpoint
-app.get("/", (req, res) => {
-    res.send("Server běží");
-});
-
-// ✅ důležité pro Railway!
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log("Server běží na portu " + PORT);
+  ws.on('close', () => {
+    console.log("Connection closed");
+  });
 });
