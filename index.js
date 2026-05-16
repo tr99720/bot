@@ -12,6 +12,7 @@ app.use((req, res, next) => {
   next();
 });
 
+// test
 app.get("/", (req, res) => {
   res.send("OK");
 });
@@ -37,9 +38,10 @@ wss.on("connection", (clientWs) => {
   console.log("✅ Twilio WS připojeno");
 
   let streamSid = null;
+  let openaiReady = false;
 
   const openaiWs = new WebSocket(
-    "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
+    "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview",
     {
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -57,10 +59,22 @@ wss.on("connection", (clientWs) => {
       console.log("🎤 Stream started");
     }
 
-    if (data.event === "media") {
+    if (data.event === "media" && openaiReady) {
       openaiWs.send(JSON.stringify({
         type: "input_audio_buffer.append",
         audio: data.media.payload
+      }));
+
+      // ✅ commit jen občas, ne každé packet!
+      openaiWs.send(JSON.stringify({
+        type: "input_audio_buffer.commit"
+      }));
+
+      openaiWs.send(JSON.stringify({
+        type: "response.create",
+        response: {
+          modalities: ["audio"]
+        }
       }));
     }
   });
@@ -70,57 +84,55 @@ wss.on("connection", (clientWs) => {
     const data = JSON.parse(msg);
 
     if (data.type === "response.audio.delta" && streamSid) {
-      setTimeout(() => {
-        clientWs.send(JSON.stringify({
-          event: "media",
-          streamSid: streamSid,
-          media: {
-            payload: data.delta
-          }
-        }));
-      }, 15); // 🔥 kritické (bez toho ticho)
+      clientWs.send(JSON.stringify({
+        event: "media",
+        streamSid: streamSid,
+        media: {
+          payload: data.delta
+        }
+      }));
     }
   });
 
-  // ✅ INIT AI
+  // ✅ HLAVNÍ FIX
   openaiWs.on("open", () => {
     console.log("🤖 OpenAI connected");
 
-    // správné nastavení
+    // správné nastavení session
     openaiWs.send(JSON.stringify({
       type: "session.update",
       session: {
-        turn_detection: { type: "server_vad" },
         input_audio_format: "g711_ulaw",
         output_audio_format: "g711_ulaw",
         voice: "alloy",
-        instructions:
-          "Jsi recepční v ordinaci. Mluv česky a pomáhej pacientům objednat se."
+        instructions: "Jsi recepční v ordinaci. Mluv česky a pomáhej pacientům."
       }
     }));
 
-    // 🔥 KRITICKÉ – vynutit první odpověď
-    setTimeout(() => {
-      openaiWs.send(JSON.stringify({
-        type: "input_audio_buffer.commit"
-      }));
+    openaiReady = true;
 
+    // ✅ první odpověď (bez čekání)
+    setTimeout(() => {
       openaiWs.send(JSON.stringify({
         type: "response.create",
         response: {
           modalities: ["audio"],
-          instructions: "Pozdrav a zeptej se, jak můžeš pomoci."
+          instructions: "Dobrý den, jak vám mohu pomoci?"
         }
       }));
-    }, 800);
+    }, 500);
+  });
+
+  openaiWs.on("close", (code, reason) => {
+    console.log("❌ OpenAI closed", code, reason?.toString());
+  });
+
+  openaiWs.on("error", (err) => {
+    console.log("❌ OpenAI error:", err.message);
   });
 
   clientWs.on("close", () => {
     openaiWs.close();
-  });
-
-  openaiWs.on("close", () => {
-    console.log("❌ OpenAI closed");
   });
 });
 
