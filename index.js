@@ -1,30 +1,15 @@
 import express from "express";
+import http from "http";
 import { WebSocketServer } from "ws";
 
 const app = express();
-
-// ✅ důležité pro POST z Twilio
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ TwiML endpoint
-app.post("/twiml", (req, res) => {
-  console.log("TWIML request received");
+// ✅ vytvoř HTTP server
+const server = http.createServer(app);
 
-  res.type("text/xml");
-
-  res.send(`
-<Response>
-  <Start>
-    <Stream url="wss://fabulous-fascination-production-185c.up.railway.app" />
-  </Start>
-  <Say>Pripojuji vas na AI asistenta</Say>
-  <Pause length="60"/>
-</Response>
-  `);
-});
-
-// ✅ WebSocket server
-const wss = new WebSocketServer({ port: process.env.PORT || 3000 });
+// ✅ WebSocket NA STEJNÉM PORTU
+const wss = new WebSocketServer({ server });
 
 wss.on("connection", (ws) => {
   console.log("✅ Twilio connected");
@@ -37,7 +22,7 @@ wss.on("connection", (ws) => {
     }
 
     if (data.event === "media") {
-      // sem chodí audio
+      // audio data
     }
 
     if (data.event === "stop") {
@@ -46,8 +31,24 @@ wss.on("connection", (ws) => {
   });
 });
 
-// ✅ HTTP server (musí zůstat)
+// ✅ TwiML endpoint
+app.post("/twiml", (req, res) => {
+  console.log("TWIML request");
+
+  res.type("text/xml");
+  res.send(`
+<Response>
+  <Start>
+    <Stream url="wss://fabulous-fascination-production-185c.up.railway.app" />
+  </Start>
+  <Say>Pripojuji vas na AI asistenta</Say>
+  <Pause length="60"/>
+</Response>
+  `);
+});
+
+// ✅ důležité: Railway port
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log("Server běží na portu " + PORT);
 });
