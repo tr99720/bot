@@ -4,21 +4,19 @@ import { WebSocketServer } from "ws";
 import WebSocket from "ws";
 
 const app = express();
-
 app.use(express.urlencoded({ extended: true }));
 
-// debug log
+// debug
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
   next();
 });
 
-// test
 app.get("/", (req, res) => {
   res.send("OK");
 });
 
-// ✅ Twilio entry
+// ✅ Twilio start
 app.all("/twiml", (req, res) => {
   res.type("text/xml");
 
@@ -35,7 +33,6 @@ app.all("/twiml", (req, res) => {
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// ✅ MAIN WS
 wss.on("connection", (clientWs) => {
   console.log("✅ Twilio WS připojeno");
 
@@ -46,8 +43,8 @@ wss.on("connection", (clientWs) => {
     {
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1"
-      }
+        "OpenAI-Beta": "realtime=v1",
+      },
     }
   );
 
@@ -61,14 +58,11 @@ wss.on("connection", (clientWs) => {
     }
 
     if (data.event === "media") {
+      // posíláme audio
       openaiWs.send(JSON.stringify({
         type: "input_audio_buffer.append",
         audio: data.media.payload
       }));
-    }
-
-    if (data.event === "stop") {
-      console.log("🛑 Stream ended");
     }
   });
 
@@ -76,11 +70,10 @@ wss.on("connection", (clientWs) => {
   openaiWs.on("message", (msg) => {
     const data = JSON.parse(msg);
 
-    // 🔥 audio response
     if (data.type === "response.audio.delta" && streamSid) {
       clientWs.send(JSON.stringify({
         event: "media",
-        streamSid,
+        streamSid: streamSid,
         media: {
           payload: data.delta
         }
@@ -88,11 +81,11 @@ wss.on("connection", (clientWs) => {
     }
   });
 
-  // ✅ INIT AI (tady byla chyba předtím!)
+  // ✅ INIT AI
   openaiWs.on("open", () => {
     console.log("🤖 OpenAI connected");
 
-    // ✅ správné nastavení session
+    // nastavení
     openaiWs.send(JSON.stringify({
       type: "session.update",
       session: {
@@ -100,19 +93,29 @@ wss.on("connection", (clientWs) => {
         input_audio_format: "g711_ulaw",
         output_audio_format: "g711_ulaw",
         voice: "alloy",
-        instructions: "Jsi recepční v ordinaci. Mluv česky a pomáhej pacientům."
+        instructions:
+          "Jsi recepční v ordinaci. Mluv česky a pomáhej pacientům objednat se."
       }
     }));
 
-    // ✅ neodpoví hned — čeká na první řeč (to je správně)
+    // 🔥 KRITICKÉ — po krátkém čase vynutit odpověď
+    setTimeout(() => {
+      openaiWs.send(JSON.stringify({
+        type: "input_audio_buffer.commit"
+      }));
+
+      openaiWs.send(JSON.stringify({
+        type: "response.create",
+        response: {
+          modalities: ["audio"],
+          instructions: "Pozdrav a zeptej se, jak můžeš pomoci."
+        }
+      }));
+    }, 1000);
   });
 
   clientWs.on("close", () => {
     openaiWs.close();
-  });
-
-  openaiWs.on("close", () => {
-    console.log("❌ OpenAI closed");
   });
 });
 
@@ -122,3 +125,4 @@ const PORT = 3000;
 server.listen(PORT, () => {
   console.log("✅ Server běží na portu " + PORT);
 });
+``
