@@ -1,27 +1,26 @@
-import WebSocket, { WebSocketServer } from 'ws';
+import WebSocket, { WebSocketServer } from "ws";
 
 const wss = new WebSocketServer({ port: process.env.PORT || 3000 });
 
-console.log("WebSocket server běží");
+console.log("WS server ready");
 
-wss.on('connection', function connection(ws) {
+wss.on("connection", (ws, req) => {
   console.log("Twilio connected");
 
-  ws.on('message', function message(data) {
-    const msg = data.toString();
-    console.log("Received:", msg);
+  ws.on("message", (msg) => {
+    const data = JSON.parse(msg.toString());
 
-    // jednoduchá odpověď (text event)
-    ws.send(JSON.stringify({
-      type: "response.create",
-      response: {
-        modalities: ["text"],
-        instructions: "Dobrý den, jsem hlasový asistent. Jak vám mohu pomoci?"
-      }
-    }));
-  });
+    if (data.event === "start") {
+      console.log("Stream started");
+    }
 
-  ws.on('close', () => {
-    console.log("Connection closed");
+    if (data.event === "media") {
+      // zde chodí audio (base64)
+      // zatím jen log
+    }
+
+    if (data.event === "stop") {
+      console.log("Stream ended");
+    }
   });
 });
