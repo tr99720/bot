@@ -6,18 +6,10 @@ import WebSocket from "ws";
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// debug
-app.use((req, res, next) => {
-  console.log("➡️", req.method, req.url);
-  next();
-});
-
-// test
 app.get("/", (req, res) => {
   res.send("OK");
 });
 
-// ✅ Twilio vstup
 app.all("/twiml", (req, res) => {
   res.type("text/xml");
 
@@ -38,19 +30,18 @@ wss.on("connection", (clientWs) => {
   console.log("✅ Twilio WS připojeno");
 
   let streamSid = null;
-  let openaiReady = false;
 
   const openaiWs = new WebSocket(
+    // ✅ jiný model (bez beta restriction)
     "wss://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview",
     {
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1"
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`
+        // ❌ odstraněn OpenAI-Beta header!
       }
     }
   );
 
-  // ✅ Twilio → OpenAI
   clientWs.on("message", (msg) => {
     const data = JSON.parse(msg);
 
@@ -59,34 +50,21 @@ wss.on("connection", (clientWs) => {
       console.log("🎤 Stream started");
     }
 
-    if (data.event === "media" && openaiReady) {
+    if (data.event === "media") {
       openaiWs.send(JSON.stringify({
         type: "input_audio_buffer.append",
         audio: data.media.payload
       }));
-
-      // ✅ commit jen občas, ne každé packet!
-      openaiWs.send(JSON.stringify({
-        type: "input_audio_buffer.commit"
-      }));
-
-      openaiWs.send(JSON.stringify({
-        type: "response.create",
-        response: {
-          modalities: ["audio"]
-        }
-      }));
     }
   });
 
-  // ✅ OpenAI → Twilio
   openaiWs.on("message", (msg) => {
     const data = JSON.parse(msg);
 
     if (data.type === "response.audio.delta" && streamSid) {
       clientWs.send(JSON.stringify({
         event: "media",
-        streamSid: streamSid,
+        streamSid,
         media: {
           payload: data.delta
         }
@@ -94,49 +72,27 @@ wss.on("connection", (clientWs) => {
     }
   });
 
-  // ✅ HLAVNÍ FIX
   openaiWs.on("open", () => {
     console.log("🤖 OpenAI connected");
 
-    // správné nastavení session
     openaiWs.send(JSON.stringify({
-      type: "session.update",
-      session: {
-        input_audio_format: "g711_ulaw",
-        output_audio_format: "g711_ulaw",
-        voice: "alloy",
-        instructions: "Jsi recepční v ordinaci. Mluv česky a pomáhej pacientům."
+      type: "response.create",
+      response: {
+        modalities: ["audio"],
+        instructions: "Dobrý den, jak vám mohu pomoci?"
       }
     }));
-
-    openaiReady = true;
-
-    // ✅ první odpověď (bez čekání)
-    setTimeout(() => {
-      openaiWs.send(JSON.stringify({
-        type: "response.create",
-        response: {
-          modalities: ["audio"],
-          instructions: "Dobrý den, jak vám mohu pomoci?"
-        }
-      }));
-    }, 500);
   });
 
   openaiWs.on("close", (code, reason) => {
-    console.log("❌ OpenAI closed", code, reason?.toString());
+    console.log("❌ OpenAI closed:", code, reason?.toString());
   });
 
   openaiWs.on("error", (err) => {
     console.log("❌ OpenAI error:", err.message);
   });
-
-  clientWs.on("close", () => {
-    openaiWs.close();
-  });
 });
 
-// ✅ PORT
 const PORT = 3000;
 
 server.listen(PORT, () => {
