@@ -11,12 +11,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// test homepage
+// homepage
 app.get("/", (req, res) => {
   res.send("OK");
 });
 
-// ✅ TWIML (Twilio vstup)
+// ✅ Twilio endpoint
 app.all("/twiml", (req, res) => {
   res.set("Content-Type", "text/xml");
 
@@ -25,21 +25,21 @@ app.all("/twiml", (req, res) => {
   <Start>
     <Stream url="wss://fabulous-fascination-production-185c.up.railway.app/ws"/>
   </Start>
-  <Say>Connecting you to the AI assistent</Say>
+  <Say>Pripojuji vas na AI asistenta</Say>
   <Pause length="60"/>
 </Response>`);
 });
 
-// ✅ HTTP server
+// HTTP server
 const server = http.createServer(app);
 
-// ✅ WebSocket server (Twilio Media Stream)
+// WebSocket server
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (clientWs) => {
   console.log("✅ Twilio WS připojeno");
 
-  // ✅ OpenAI realtime WS
+  // OpenAI WS
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
     {
@@ -50,7 +50,7 @@ wss.on("connection", (clientWs) => {
     }
   );
 
-  // 👉 Twilio → OpenAI
+  // Twilio → OpenAI
   clientWs.on("message", (msg) => {
     try {
       const data = JSON.parse(msg.toString());
@@ -64,3 +64,57 @@ wss.on("connection", (clientWs) => {
           type: "input_audio_buffer.append",
           audio: data.media.payload
         }));
+      }
+
+      if (data.event === "stop") {
+        console.log("🛑 Stream ended");
+      }
+    } catch (e) {
+      console.log("parse error");
+    }
+  });
+
+  // OpenAI → Twilio
+  openaiWs.on("message", (msg) => {
+    try {
+      const data = JSON.parse(msg.toString());
+
+      if (data.type === "response.audio.delta") {
+        clientWs.send(JSON.stringify({
+          event: "media",
+          media: {
+            payload: data.delta
+          }
+        }));
+      }
+    } catch (e) {}
+  });
+
+  openaiWs.on("open", () => {
+    console.log("🤖 OpenAI připojeno");
+
+    openaiWs.send(JSON.stringify({
+      type: "response.create",
+      response: {
+        modalities: ["audio"],
+        instructions: "Jsi recepční v ordinaci. Mluv česky a pomáhej pacientům objednat se."
+      }
+    }));
+  });
+
+  openaiWs.on("close", () => {
+    console.log("❌ OpenAI zavřeno");
+  });
+
+  clientWs.on("close", () => {
+    openaiWs.close();
+  });
+});
+
+// ✅ důležité – port
+const PORT = 3000;
+
+server.listen(PORT, () => {
+  console.log("✅ Server běží na portu " + PORT);
+});
+
