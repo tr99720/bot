@@ -2,17 +2,30 @@ import express from "express";
 
 const app = express();
 
-app.post("/voice", (req, res) => {
+// důležité pro Twilio ↓↓↓
+app.use(express.urlencoded({ extended: true }));
 
-    res.set("Content-Type", "text/xml");
+app.post("/voice", (req, res) => {
+    console.log("CALL RECEIVED"); // uvidíš v logu
+
+    res.type("text/xml");
 
     res.send(`
-        <Response>
-            <Say voice="Polly.Celine">
-                Dobrý den, vítejte. Jak vám mohu pomoci?
-            </Say>
-        </Response>
+<Response>
+    <Say voice="alice" language="cs-CZ">
+        Dobrý den. Tohle je testovací hlasový chatbot.
+    </Say>
+</Response>
     `);
 });
 
-app.listen(3000);
+// test endpoint
+app.get("/", (req, res) => {
+    res.send("Server běží");
+});
+
+// ✅ důležité pro Railway!
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+    console.log("Server běží na portu " + PORT);
+});
