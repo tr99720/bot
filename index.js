@@ -16,7 +16,7 @@ app.get("/", (req, res) => {
   res.send("OK");
 });
 
-// ✅ Twilio start
+// ✅ Twilio vstup
 app.all("/twiml", (req, res) => {
   res.type("text/xml");
 
@@ -43,8 +43,8 @@ wss.on("connection", (clientWs) => {
     {
       headers: {
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "OpenAI-Beta": "realtime=v1",
-      },
+        "OpenAI-Beta": "realtime=v1"
+      }
     }
   );
 
@@ -58,7 +58,6 @@ wss.on("connection", (clientWs) => {
     }
 
     if (data.event === "media") {
-      // posíláme audio
       openaiWs.send(JSON.stringify({
         type: "input_audio_buffer.append",
         audio: data.media.payload
@@ -71,13 +70,15 @@ wss.on("connection", (clientWs) => {
     const data = JSON.parse(msg);
 
     if (data.type === "response.audio.delta" && streamSid) {
-      clientWs.send(JSON.stringify({
-        event: "media",
-        streamSid: streamSid,
-        media: {
-          payload: data.delta
-        }
-      }));
+      setTimeout(() => {
+        clientWs.send(JSON.stringify({
+          event: "media",
+          streamSid: streamSid,
+          media: {
+            payload: data.delta
+          }
+        }));
+      }, 15); // 🔥 kritické (bez toho ticho)
     }
   });
 
@@ -85,7 +86,7 @@ wss.on("connection", (clientWs) => {
   openaiWs.on("open", () => {
     console.log("🤖 OpenAI connected");
 
-    // nastavení
+    // správné nastavení
     openaiWs.send(JSON.stringify({
       type: "session.update",
       session: {
@@ -98,7 +99,7 @@ wss.on("connection", (clientWs) => {
       }
     }));
 
-    // 🔥 KRITICKÉ — po krátkém čase vynutit odpověď
+    // 🔥 KRITICKÉ – vynutit první odpověď
     setTimeout(() => {
       openaiWs.send(JSON.stringify({
         type: "input_audio_buffer.commit"
@@ -111,11 +112,15 @@ wss.on("connection", (clientWs) => {
           instructions: "Pozdrav a zeptej se, jak můžeš pomoci."
         }
       }));
-    }, 1000);
+    }, 800);
   });
 
   clientWs.on("close", () => {
     openaiWs.close();
+  });
+
+  openaiWs.on("close", () => {
+    console.log("❌ OpenAI closed");
   });
 });
 
@@ -125,4 +130,3 @@ const PORT = 3000;
 server.listen(PORT, () => {
   console.log("✅ Server běží na portu " + PORT);
 });
-``
