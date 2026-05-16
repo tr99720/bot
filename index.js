@@ -1,25 +1,23 @@
-import WebSocket from "ws";
 import express from "express";
 import http from "http";
 import { WebSocketServer } from "ws";
+import WebSocket from "ws";
 
 const app = express();
 
-// log každého requestu
+// log requestů
 app.use((req, res, next) => {
   console.log("➡️", req.method, req.url);
   next();
 });
 
-// homepage (test)
+// test homepage
 app.get("/", (req, res) => {
   res.send("OK");
 });
 
-// ✅ TWILIO ENDPOINT
+// ✅ TWIML (Twilio vstup)
 app.all("/twiml", (req, res) => {
-  console.log("✅ TWIML HIT");
-
   res.set("Content-Type", "text/xml");
 
   res.send(`<?xml version="1.0" encoding="UTF-8"?>
@@ -27,21 +25,33 @@ app.all("/twiml", (req, res) => {
   <Start>
     <Stream url="wss://fabulous-fascination-production-185c.up.railway.app/ws"/>
   </Start>
-  <Say>Pripojuji vas na AI asistenta</Say>
+  <Say>Connecting you to the AI assistent</Say>
   <Pause length="60"/>
 </Response>`);
 });
 
-// ✅ HTTP server (nutné pro WebSocket na Railway)
+// ✅ HTTP server
 const server = http.createServer(app);
 
-// ✅ WEBSOCKET
+// ✅ WebSocket server (Twilio Media Stream)
 const wss = new WebSocketServer({ server });
 
-wss.on("connection", (ws, req) => {
+wss.on("connection", (clientWs) => {
   console.log("✅ Twilio WS připojeno");
 
-  ws.on("message", (msg) => {
+  // ✅ OpenAI realtime WS
+  const openaiWs = new WebSocket(
+    "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
+    {
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "OpenAI-Beta": "realtime=v1"
+      }
+    }
+  );
+
+  // 👉 Twilio → OpenAI
+  clientWs.on("message", (msg) => {
     try {
       const data = JSON.parse(msg.toString());
 
@@ -50,27 +60,7 @@ wss.on("connection", (ws, req) => {
       }
 
       if (data.event === "media") {
-        // audio data přichází tady (base64)
-        // zatím jen ignorujeme
-      }
-
-      if (data.event === "stop") {
-        console.log("🛑 Stream ended");
-      }
-    } catch (e) {
-      console.log("WS parse error");
-    }
-  });
-
-  ws.on("close", () => {
-    console.log("❌ WS closed");
-  });
-});
-
-// ✅ PORT (musí být 3000 podle Railway nastavení)
-const PORT = 3000;
-
-server.listen(PORT, () => {
-  console.log("✅ Server běží na portu " + PORT);
-});
-``
+        openaiWs.send(JSON.stringify({
+          type: "input_audio_buffer.append",
+          audio: data.media.payload
+        }));
