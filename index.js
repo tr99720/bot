@@ -2,12 +2,17 @@ import express from "express";
 
 const app = express();
 
-// krytí POST dat od Twilio
+// Twilio posílá data jako form-urlencoded
 app.use(express.urlencoded({ extended: true }));
 
-// 🔥 TEST endpoint
-app.post("/twiml", (req, res) => {
-  console.log("TWIML REQUEST OK");
+// ✅ homepage test
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
+// ✅ TWIML endpoint (funguje pro GET i POST)
+app.all("/twiml", (req, res) => {
+  console.log("✅ TWIML REQUEST PŘIŠEL");
 
   res.set("Content-Type", "text/xml");
 
@@ -17,13 +22,9 @@ app.post("/twiml", (req, res) => {
 </Response>`);
 });
 
-// test homepage
-app.get("/", (req, res) => {
-  res.send("OK");
-});
-
+// ✅ Railway musí poslouchat na tomhle portu
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-  console.log("Server běží na portu " + PORT);
+  console.log("✅ Server běží na portu " + PORT);
 });
