@@ -1,40 +1,29 @@
-const express = require("express");
+import express from "express";
 
 const app = express();
 
-// ✅ LOG každého requestu (důležité!)
+// log každého requestu (debug)
 app.use((req, res, next) => {
-  console.log("➡️ Request:", req.method, req.url);
+  console.log("➡️", req.method, req.url);
   next();
 });
 
-// ✅ homepage
+// homepage
 app.get("/", (req, res) => {
-  console.log("✅ / hit");
-  res.status(200).send("OK");
+  res.send("OK");
 });
 
-// ✅ Twilio endpoint
+// Twilio endpoint
 app.all("/twiml", (req, res) => {
-  console.log("✅ /twiml hit");
-
-  res.status(200).type("text/xml").send(`
+  res.set("Content-Type", "text/xml");
+  res.send(`<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say>Test funguje</Say>
-</Response>
-  `);
+</Response>`);
 });
 
-// ✅ fallback (když něco jiného zavolá)
-app.use((req, res) => {
-  console.log("❌ unknown route:", req.url);
-  res.status(200).send("fallback");
-});
-
-// ✅ port
 const PORT = process.env.PORT;
 
 app.listen(PORT, () => {
-  console.log("✅ Server listening on port " + PORT);
+  console.log("✅ Server běží na portu " + PORT);
 });
-``
