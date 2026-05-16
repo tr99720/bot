@@ -3,7 +3,7 @@ import express from "express";
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ AI dotaz (text)
+// ✅ AI dotaz
 async function askAI(message) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -27,7 +27,7 @@ app.post("/twiml", (req, res) => {
 
   res.send(`
 <Response>
-  <Say>Vítejte, jak vám mohu pomoci?</Say>
+  <Say>Dobrý den, jak vám mohu pomoci?</Say>
   <Gather input="speech" action="/process" method="POST" language="cs-CZ" />
 </Response>
   `);
@@ -37,7 +37,7 @@ app.post("/twiml", (req, res) => {
 app.post("/process", async (req, res) => {
   const speechText = req.body.SpeechResult;
 
-  console.log("🎤 User said:", speechText);
+  console.log("🎤 User:", speechText);
 
   let aiResponse = "Nerozumím, zkuste to prosím znovu.";
 
