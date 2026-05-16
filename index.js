@@ -11,12 +11,12 @@ app.use((req, res, next) => {
   next();
 });
 
-// homepage
+// test homepage
 app.get("/", (req, res) => {
   res.send("OK");
 });
 
-// ✅ Twilio endpoint
+// ✅ TWIML (Twilio call → stream)
 app.all("/twiml", (req, res) => {
   res.set("Content-Type", "text/xml");
 
@@ -33,13 +33,13 @@ app.all("/twiml", (req, res) => {
 // HTTP server
 const server = http.createServer(app);
 
-// WebSocket server
+// ✅ WebSocket server (Twilio)
 const wss = new WebSocketServer({ server });
 
 wss.on("connection", (clientWs) => {
   console.log("✅ Twilio WS připojeno");
 
-  // OpenAI WS
+  // ✅ OpenAI realtime
   const openaiWs = new WebSocket(
     "wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview",
     {
@@ -50,7 +50,7 @@ wss.on("connection", (clientWs) => {
     }
   );
 
-  // Twilio → OpenAI
+  // 👉 Twilio → OpenAI
   clientWs.on("message", (msg) => {
     try {
       const data = JSON.parse(msg.toString());
@@ -74,11 +74,12 @@ wss.on("connection", (clientWs) => {
     }
   });
 
-  // OpenAI → Twilio
+  // 👉 OpenAI → Twilio (audio reply)
   openaiWs.on("message", (msg) => {
     try {
       const data = JSON.parse(msg.toString());
 
+      // audio stream zpět
       if (data.type === "response.audio.delta") {
         clientWs.send(JSON.stringify({
           event: "media",
@@ -90,14 +91,29 @@ wss.on("connection", (clientWs) => {
     } catch (e) {}
   });
 
+  // ✅ INIT AI
   openaiWs.on("open", () => {
     console.log("🤖 OpenAI připojeno");
 
+    // 🔥 nastavení audio + chování
+    openaiWs.send(JSON.stringify({
+      type: "session.update",
+      session: {
+        turn_detection: { type: "server_vad" },
+        input_audio_format: "g711_ulaw",
+        output_audio_format: "g711_ulaw",
+        voice: "alloy",
+        instructions:
+          "Jsi recepční v ordinaci. Mluv česky, buď stručný a pomáhej pacientům objednat se."
+      }
+    }));
+
+    // 🔥 první odpověď
     openaiWs.send(JSON.stringify({
       type: "response.create",
       response: {
         modalities: ["audio"],
-        instructions: "Jsi recepční v ordinaci. Mluv česky a pomáhej pacientům objednat se."
+        instructions: "Pozdrav a zeptej se, jak můžeš pomoci."
       }
     }));
   });
@@ -111,10 +127,9 @@ wss.on("connection", (clientWs) => {
   });
 });
 
-// ✅ důležité – port
+// ✅ PORT (musí být 3000)
 const PORT = 3000;
 
 server.listen(PORT, () => {
   console.log("✅ Server běží na portu " + PORT);
 });
-
