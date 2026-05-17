@@ -1,9 +1,16 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ OpenAI
+const PUBLIC_URL = "https://fabulous-fascination-production-185c.up.railway.app";
+
+// ✅ složka pro audio
+const AUDIO_PATH = "/tmp/response.mp3";
+
+// ✅ OpenAI text odpověď
 async function askAI(message) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -14,13 +21,9 @@ async function askAI(message) {
     body: JSON.stringify({
       model: "gpt-4o",
       input: `
-Jsi profesionální recepční v české ordinaci.
+Jsi recepční v české ordinaci.
 
-PRAVIDLA:
-- mluv česky
-- odpovídej krátce (1–2 věty)
-- buď přirozený jako člověk na telefonu
-- nepoužívej složité formulace
+Mluv přirozeně česky, krátce a srozumitelně.
 
 Dotaz:
 ${message}
@@ -33,36 +36,54 @@ ${message}
   try {
     return data.output[0].content[0].text;
   } catch {
-    return "Omlouvám se, nerozumím. Zkuste to prosím znovu.";
+    return "Omlouvám se, zkuste to prosím znovu.";
   }
 }
 
-// ✅ START hovoru
+// ✅ OpenAI TTS (český hlas)
+async function generateSpeech(text) {
+  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini-tts",
+      voice: "alloy", // ✅ nejlepší dostupný (funguje i na CZ text)
+      input: text
+    })
+  });
+
+  const arrayBuffer = await response.arrayBuffer();
+  fs.writeFileSync(AUDIO_PATH, Buffer.from(arrayBuffer));
+}
+
+// ✅ endpoint pro audio
+app.get("/audio", (req, res) => {
+  res.sendFile(AUDIO_PATH);
+});
+
+// ✅ start hovoru
 app.post("/twiml", (req, res) => {
   res.type("text/xml");
 
   res.send(`
 <Response>
-  <Gather 
-    input="speech"
-    action="/process"
-    method="POST"
-    language="cs-CZ"
-    speechModel="phone_call"
-    hints="objednání, termín, doktor, vyšetření, pacient, bolest, kontrola"
-    timeout="3"
-    speechTimeout="auto"
-  >
+  <Gather input="speech"
+          language="cs-CZ"
+          speechTimeout="auto"
+          timeout="3"
+          action="/process">
     <Say language="cs-CZ">Dobrý den, jak vám mohu pomoci?</Say>
   </Gather>
 
-  <!-- fallback -->
   <Redirect>/twiml</Redirect>
 </Response>
   `);
 });
 
-// ✅ ZPRACOVÁNÍ řeči
+// ✅ zpracování řeči
 app.post("/process", async (req, res) => {
   const speechText = req.body.SpeechResult;
 
@@ -71,6 +92,32 @@ app.post("/process", async (req, res) => {
   let aiResponse = "Nerozumím, zkuste to prosím znovu.";
 
   if (speechText && speechText.trim() !== "") {
-    try {
-      aiResponse = await askAI(speechText);
-    } catch (e) {
+    aiResponse = await askAI(speechText);
+  }
+
+  // ✅ vytvoř audio
+  await generateSpeech(aiResponse);
+
+  res.type("text/xml");
+
+  res.send(`
+<Response>
+  <Play>${PUBLIC_URL}/audio</Play>
+
+  <Gather input="speech"
+          language="cs-CZ"
+          speechTimeout="auto"
+          timeout="3"
+          action="/process">
+    <Say language="cs-CZ">Mohu ještě s něčím pomoci?</Say>
+  </Gather>
+</Response>
+  `);
+});
+
+// ✅ server
+const PORT = 3000;
+
+app.listen(PORT, () => {
+  console.log("✅ Server běží na portu " + PORT);
+});
