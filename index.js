@@ -16,10 +16,13 @@ async function askAI(message) {
       input: `
 Jsi profesionální recepční v české ordinaci.
 
-Mluv přirozeně česky, krátce a srozumitelně.
-Používej jednoduché věty jako člověk na telefonu.
+PRAVIDLA:
+- mluv česky
+- odpovídej krátce (1–2 věty)
+- buď přirozený jako člověk na telefonu
+- nepoužívej složité formulace
 
-Otázka:
+Dotaz:
 ${message}
       `
     })
@@ -30,31 +33,36 @@ ${message}
   try {
     return data.output[0].content[0].text;
   } catch {
-    return "Omlouvám se, zkuste to prosím znovu.";
+    return "Omlouvám se, nerozumím. Zkuste to prosím znovu.";
   }
 }
 
-// ✅ START
+// ✅ START hovoru
 app.post("/twiml", (req, res) => {
   res.type("text/xml");
 
   res.send(`
 <Response>
-  <Say language="cs-CZ">Dobrý den, jak vám mohu pomoci?</Say>
-
   <Gather 
-    input="speech" 
-    action="/process" 
+    input="speech"
+    action="/process"
     method="POST"
     language="cs-CZ"
+    speechModel="phone_call"
+    hints="objednání, termín, doktor, vyšetření, pacient, bolest, kontrola"
+    timeout="3"
     speechTimeout="auto"
-    timeout="3">
+  >
+    <Say language="cs-CZ">Dobrý den, jak vám mohu pomoci?</Say>
   </Gather>
+
+  <!-- fallback -->
+  <Redirect>/twiml</Redirect>
 </Response>
   `);
 });
 
-// ✅ ZPRACOVÁNÍ
+// ✅ ZPRACOVÁNÍ řeči
 app.post("/process", async (req, res) => {
   const speechText = req.body.SpeechResult;
 
@@ -62,32 +70,7 @@ app.post("/process", async (req, res) => {
 
   let aiResponse = "Nerozumím, zkuste to prosím znovu.";
 
-  if (speechText) {
-    aiResponse = await askAI(speechText);
-  }
-
-  res.type("text/xml");
-
-  res.send(`
-<Response>
-  <Say language="cs-CZ">Okamžik prosím.</Say>
-  <Pause length="1"/>
-  <Say language="cs-CZ">${aiResponse}</Say>
-
-  <Gather 
-    input="speech" 
-    action="/process" 
-    method="POST"
-    language="cs-CZ"
-    speechTimeout="auto"
-    timeout="3">
-  </Gather>
-</Response>
-  `);
-});
-
-const PORT = 3000;
-
-app.listen(PORT, () => {
-  console.log("✅ Server běží na portu " + PORT);
-});
+  if (speechText && speechText.trim() !== "") {
+    try {
+      aiResponse = await askAI(speechText);
+    } catch (e) {
