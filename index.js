@@ -1,18 +1,15 @@
 import express from "express";
 import fs from "fs";
-import path from "path";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
 const PUBLIC_URL = "https://fabulous-fascination-production-185c.up.railway.app";
+const AUDIO_PATH = "/tmp/voice.mp3";
 
-// ✅ složka pro audio
-const AUDIO_PATH = "/tmp/response.mp3";
-
-// ✅ OpenAI text odpověď
+// ✅ OpenAI odpověď
 async function askAI(message) {
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const res = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -22,8 +19,7 @@ async function askAI(message) {
       model: "gpt-4o",
       input: `
 Jsi recepční v české ordinaci.
-
-Mluv přirozeně česky, krátce a srozumitelně.
+Mluv přirozeně česky, krátce.
 
 Dotaz:
 ${message}
@@ -31,7 +27,7 @@ ${message}
     })
   });
 
-  const data = await response.json();
+  const data = await res.json();
 
   try {
     return data.output[0].content[0].text;
@@ -40,62 +36,58 @@ ${message}
   }
 }
 
-// ✅ OpenAI TTS (český hlas)
+// ✅ ElevenLabs TTS
 async function generateSpeech(text) {
-  const response = await fetch("https://api.openai.com/v1/audio/speech", {
+  const res = await fetch("https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL", {
     method: "POST",
     headers: {
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      "xi-api-key": process.env.ELEVEN_API_KEY,
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini-tts",
-      voice: "alloy", // ✅ nejlepší dostupný (funguje i na CZ text)
-      input: text
+      text: text,
+      model_id: "eleven_multilingual_v2",
+      voice_settings: {
+        stability: 0.4,
+        similarity_boost: 0.8
+      }
     })
   });
 
-  const arrayBuffer = await response.arrayBuffer();
+  const arrayBuffer = await res.arrayBuffer();
   fs.writeFileSync(AUDIO_PATH, Buffer.from(arrayBuffer));
 }
 
-// ✅ endpoint pro audio
+// ✅ audio endpoint
 app.get("/audio", (req, res) => {
   res.sendFile(AUDIO_PATH);
 });
 
-// ✅ start hovoru
+// ✅ start
 app.post("/twiml", (req, res) => {
   res.type("text/xml");
 
   res.send(`
 <Response>
-  <Gather input="speech"
-          language="cs-CZ"
-          speechTimeout="auto"
-          timeout="3"
-          action="/process">
+  /process
     <Say language="cs-CZ">Dobrý den, jak vám mohu pomoci?</Say>
   </Gather>
-
-  <Redirect>/twiml</Redirect>
 </Response>
   `);
 });
 
-// ✅ zpracování řeči
+// ✅ process
 app.post("/process", async (req, res) => {
   const speechText = req.body.SpeechResult;
 
-  console.log("🎤 Uživatel:", speechText);
+  console.log("🎤:", speechText);
 
-  let aiResponse = "Nerozumím, zkuste to prosím znovu.";
+  let aiResponse = "Nerozumím.";
 
-  if (speechText && speechText.trim() !== "") {
+  if (speechText) {
     aiResponse = await askAI(speechText);
   }
 
-  // ✅ vytvoř audio
   await generateSpeech(aiResponse);
 
   res.type("text/xml");
@@ -104,20 +96,12 @@ app.post("/process", async (req, res) => {
 <Response>
   <Play>${PUBLIC_URL}/audio</Play>
 
-  <Gather input="speech"
-          language="cs-CZ"
-          speechTimeout="auto"
-          timeout="3"
-          action="/process">
-    <Say language="cs-CZ">Mohu ještě s něčím pomoci?</Say>
+  /process
+    <Say language="cs-CZ">Mohu ještě pomoci?</Say>
   </Gather>
 </Response>
   `);
 });
 
-// ✅ server
 const PORT = 3000;
-
-app.listen(PORT, () => {
-  console.log("✅ Server běží na portu " + PORT);
-});
+app.listen(PORT, () => console.log("✅ běží na 3000"));
