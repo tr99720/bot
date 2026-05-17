@@ -3,7 +3,7 @@ import express from "express";
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ OPENAI - učitel angličtiny
+// ✅ AI – English teacher (rychlá verze)
 async function askAI(message) {
   try {
     const res = await fetch("https://api.openai.com/v1/responses", {
@@ -15,12 +15,12 @@ async function askAI(message) {
       body: JSON.stringify({
         model: "gpt-4o-mini",
         input: `
-You are an English teacher for speaking practice.
+You are an English speaking teacher for phone conversation practice.
 
-Rules:
-- Speak simple, clear English
-- Keep responses short (1–2 sentences)
-- Ask follow-up questions
+VERY IMPORTANT:
+- Answer in MAX 1 short sentence
+- Speak fast and naturally
+- Always ask a follow-up question
 - If the user makes a mistake, gently correct it
 
 User said:
@@ -32,7 +32,7 @@ ${message}
     const data = await res.json();
     return data.output?.[0]?.content?.[0]?.text || "Can you repeat that?";
   } catch (e) {
-    console.log("AI error:", e);
+    console.log("AI error:", e.message);
     return "Sorry, something went wrong.";
   }
 }
@@ -43,14 +43,16 @@ app.post("/twiml", (req, res) => {
 
   res.send(`
 <Response>
-  <Say>Hi! I am your English teacher. Let's practice speaking.</Say>
+  <Say voice="Polly.Joanna">Hi! I am your English teacher. Let's practice speaking.</Say>
 
-  <Gather input="speech"
-          action="/process"
-          method="POST"
-          language="en-US"
-          speechTimeout="auto"
-          timeout="3">
+  <Gather 
+    input="speech" 
+    action="/process" 
+    method="POST"
+    timeout="1"
+    speechTimeout="auto"
+    language="en-US"
+  >
   </Gather>
 </Response>
   `);
@@ -60,9 +62,9 @@ app.post("/twiml", (req, res) => {
 app.post("/process", async (req, res) => {
   const speechText = req.body.SpeechResult;
 
-  console.log("User:", speechText);
+  console.log("User said:", speechText);
 
-  let aiResponse = "I didn't understand. Can you try again?";
+  let aiResponse = "I didn't catch that. Can you repeat?";
 
   if (speechText && speechText.trim() !== "") {
     aiResponse = await askAI(speechText);
@@ -72,14 +74,16 @@ app.post("/process", async (req, res) => {
 
   res.send(`
 <Response>
-  <Say>${aiResponse}</Say>
+  <Say voice="Polly.Joanna">${aiResponse}</Say>
 
-  <Gather input="speech"
-          action="/process"
-          method="POST"
-          language="en-US"
-          speechTimeout="auto"
-          timeout="3">
+  <Gather 
+    input="speech" 
+    action="/process" 
+    method="POST"
+    timeout="1"
+    speechTimeout="auto"
+    language="en-US"
+  >
   </Gather>
 </Response>
   `);
