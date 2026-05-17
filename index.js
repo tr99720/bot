@@ -3,7 +3,7 @@ import express from "express";
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-// ✅ volání OpenAI
+// ✅ OpenAI
 async function askAI(message) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -12,14 +12,14 @@ async function askAI(message) {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      model: "gpt-4o", // ✅ lepší čeština
+      model: "gpt-4o",
       input: `
 Jsi profesionální recepční v české ordinaci.
 
 Mluv přirozeně česky, krátce a srozumitelně.
 Používej jednoduché věty jako člověk na telefonu.
 
-Otázka pacienta:
+Otázka:
 ${message}
       `
     })
@@ -27,59 +27,65 @@ ${message}
 
   const data = await response.json();
 
-  // bezpečný návrat
   try {
     return data.output[0].content[0].text;
   } catch {
-    return "Omlouvám se, došlo k chybě. Zkuste to prosím znovu.";
+    return "Omlouvám se, zkuste to prosím znovu.";
   }
 }
 
-// ✅ vstupní endpoint
+// ✅ START
 app.post("/twiml", (req, res) => {
   res.type("text/xml");
 
   res.send(`
 <Response>
-  <Say>Vítejte, jak vám mohu pomoci?</Say>
-  <Gather input="speech" timeout="3" speechTimeout="auto"
-          action="/process" method="POST" language="cs-CZ" />
-  <Redirect>/twiml</Redirect>
+  <Say language="cs-CZ">Dobrý den, jak vám mohu pomoci?</Say>
+
+  <Gather 
+    input="speech" 
+    action="/process" 
+    method="POST"
+    language="cs-CZ"
+    speechTimeout="auto"
+    timeout="3">
+  </Gather>
 </Response>
   `);
 });
 
-// ✅ zpracování řeči
+// ✅ ZPRACOVÁNÍ
 app.post("/process", async (req, res) => {
   const speechText = req.body.SpeechResult;
 
-  console.log("🎤 Uživatel řekl:", speechText);
+  console.log("🎤 Uživatel:", speechText);
 
   let aiResponse = "Nerozumím, zkuste to prosím znovu.";
 
   if (speechText) {
-    try {
-      aiResponse = await askAI(speechText);
-    } catch (e) {
-      console.log("AI error:", e.message);
-    }
+    aiResponse = await askAI(speechText);
   }
 
   res.type("text/xml");
 
   res.send(`
 <Response>
-  <Say>Okamžik prosím.</Say>
+  <Say language="cs-CZ">Okamžik prosím.</Say>
   <Pause length="1"/>
-  <Say>${aiResponse}</Say>
+  <Say language="cs-CZ">${aiResponse}</Say>
 
-  <Gather input="speech" timeout="3" speechTimeout="auto"
-          action="/process" method="POST" language="cs-CZ" />
+  <Gather 
+    input="speech" 
+    action="/process" 
+    method="POST"
+    language="cs-CZ"
+    speechTimeout="auto"
+    timeout="3">
+  </Gather>
 </Response>
   `);
 });
 
-// ✅ server
 const PORT = 3000;
 
 app.listen(PORT, () => {
