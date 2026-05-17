@@ -1,13 +1,9 @@
 import express from "express";
-import fs from "fs";
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
 
-const PUBLIC_URL = "https://fabulous-fascination-production-185c.up.railway.app";
-const AUDIO_PATH = "/tmp/voice.mp3";
-
-// ✅ OPENAI (text odpověď)
+// ✅ OPENAI - učitel angličtiny
 async function askAI(message) {
   try {
     const res = await fetch("https://api.openai.com/v1/responses", {
@@ -17,88 +13,45 @@ async function askAI(message) {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "gpt-4o",
-        input: `Jsi recepční v ordinaci. Odpověz česky stručně: ${message}`
+        model: "gpt-4o-mini",
+        input: `
+You are an English teacher for speaking practice.
+
+Rules:
+- Speak simple, clear English
+- Keep responses short (1–2 sentences)
+- Ask follow-up questions
+- If the user makes a mistake, gently correct it
+
+User said:
+${message}
+        `
       })
     });
 
     const data = await res.json();
-    return data.output?.[0]?.content?.[0]?.text || "Nerozumím.";
+    return data.output?.[0]?.content?.[0]?.text || "Can you repeat that?";
   } catch (e) {
-    console.log("❌ OpenAI error:", e.message);
-    return "Došlo k chybě, zkuste to prosím znovu.";
+    console.log("AI error:", e);
+    return "Sorry, something went wrong.";
   }
 }
 
-// ✅ ELEVENLABS (správně s voiceId)
-async function generateSpeech(text) {
-  try {
-    if (!process.env.ELEVEN_API_KEY) {
-      console.log("⚠️ chybí ELEVEN_API_KEY");
-      return false;
-    }
-
-    // ✅ veřejně funkční voiceId (můžeš později změnit)
-    const voiceId = "EXAVITQu4vr4xnSDxMaL";
-
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
-      {
-        method: "POST",
-        headers: {
-          "xi-api-key": process.env.ELEVEN_API_KEY,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          text: text,
-          model_id: "eleven_multilingual_v2",
-          output_format: "mp3_44100_128"
-        })
-      }
-    );
-
-    if (!response.ok) {
-      const err = await response.text();
-      console.log("❌ ElevenLabs error:", err);
-      return false;
-    }
-
-    const buffer = Buffer.from(await response.arrayBuffer());
-
-    if (buffer.length < 100) {
-      console.log("❌ prázdné audio");
-      return false;
-    }
-
-    fs.writeFileSync(AUDIO_PATH, buffer);
-    return true;
-
-  } catch (err) {
-    console.log("❌ TTS error:", err.message);
-    return false;
-  }
-}
-
-// ✅ AUDIO endpoint
-app.get("/audio", (req, res) => {
-  if (fs.existsSync(AUDIO_PATH)) {
-    res.sendFile(AUDIO_PATH);
-  } else {
-    res.status(404).send("no audio yet");
-  }
-});
-
-// ✅ START hovoru
+// ✅ START
 app.post("/twiml", (req, res) => {
   res.type("text/xml");
 
   res.send(`
 <Response>
-  <Gather input="speech" language="cs-CZ" timeout="3" speechTimeout="auto" action="/process">
-    <Say>Dobrý den, jak vám mohu pomoci?</Say>
-  </Gather>
+  <Say>Hi! I am your English teacher. Let's practice speaking.</Say>
 
-  <Redirect>/twiml</Redirect>
+  <Gather input="speech"
+          action="/process"
+          method="POST"
+          language="en-US"
+          speechTimeout="auto"
+          timeout="3">
+  </Gather>
 </Response>
   `);
 });
@@ -107,28 +60,27 @@ app.post("/twiml", (req, res) => {
 app.post("/process", async (req, res) => {
   const speechText = req.body.SpeechResult;
 
-  console.log("🎤 Uživatel řekl:", speechText);
+  console.log("User:", speechText);
 
-  const aiResponse = await askAI(speechText || "");
+  let aiResponse = "I didn't understand. Can you try again?";
 
-  const ok = await generateSpeech(aiResponse);
+  if (speechText && speechText.trim() !== "") {
+    aiResponse = await askAI(speechText);
+  }
 
   res.type("text/xml");
 
-  // ✅ fallback když TTS nefunguje
-  if (!ok) {
-    return res.send(`
-<Response>
-  <Say language="cs-CZ">${aiResponse}</Say>
-  <Redirect>/twiml</Redirect>
-</Response>
-    `);
-  }
-
   res.send(`
 <Response>
-  <Play>${PUBLIC_URL}/audio</Play>
-  <Redirect>/twiml</Redirect>
+  <Say>${aiResponse}</Say>
+
+  <Gather input="speech"
+          action="/process"
+          method="POST"
+          language="en-US"
+          speechTimeout="auto"
+          timeout="3">
+  </Gather>
 </Response>
   `);
 });
@@ -137,5 +89,5 @@ app.post("/process", async (req, res) => {
 const PORT = 3000;
 
 app.listen(PORT, () => {
-  console.log("✅ Server běží na portu", PORT);
+  console.log("✅ Server running on port", PORT);
 });
